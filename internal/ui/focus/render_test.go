@@ -75,7 +75,7 @@ func TestCursorPaintedOnItsRow(t *testing.T) {
 }
 
 func TestCursorOverlayKeepsWideGraphemesWhole(t *testing.T) {
-	for _, line := range []string{"abc", "你是谁", "a你b", "a😀b", "ae\u0301b", "a👩‍💻b", "\x1b[31m你是谁\x1b[0m"} {
+	for _, line := range []string{"abc", "你是谁", "a你b", "a😀b", "ae\u0301b", "a👩‍💻b", "1️⃣ab", "a1️⃣b", "\x1b[31m1️⃣ab\x1b[0m", "a\x1b[31m你\x1b[34mb\x1b[0m", "\x1b[31m你是谁\x1b[0m", "\x1b[你aa"} {
 		want := ansi.Strip(line)
 		for col := 0; col < ansi.StringWidth(line); col++ {
 			model := mouseModel(t, []string{line}, 20, caretAt(col, 0))
@@ -84,6 +84,18 @@ func TestCursorOverlayKeepsWideGraphemesWhole(t *testing.T) {
 				t.Errorf("line %q, cursor column %d: got %q, want %q", line, col, got, want)
 			}
 		}
+	}
+}
+
+func TestCursorOverlayPreservesSurroundingANSI(t *testing.T) {
+	line := "\x1b[31mred\x1b[0m \x1b[34mblue\x1b[0m"
+	model := mouseModel(t, []string{line}, 20, caretAt(3, 0))
+	row := model.renderPaneRow(0, line, 20, litStyle(), litStyle())
+	redStart := strings.Index(row, "\x1b[31mred")
+	overlayStart := strings.Index(row, litStyle().Render(" "))
+	blueStart := strings.Index(row, "\x1b[34mblue")
+	if redStart < 0 || overlayStart < 0 || blueStart < 0 || redStart >= overlayStart || overlayStart >= blueStart {
+		t.Fatalf("cursor overlay missing or misplaced: %q", row)
 	}
 }
 
