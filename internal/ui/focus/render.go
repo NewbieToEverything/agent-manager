@@ -111,19 +111,12 @@ func (m Model) withCursor(row int, raw string, width int, style lipgloss.Style) 
 		pad := strings.Repeat(" ", cursorCol-lineWidth)
 		return fitPaneLine(clean+pad+style.Render(" "), width)
 	}
-	head := ansi.Truncate(clean, cursorCol, "")
-	tail := ansi.TruncateLeft(clean, cursorCol+1, "")
-	cell := graphemeAtCell(ansi.Strip(clean), cursorCol)
+	line := ansi.Strip(clean)
+	start, end := graphemeRangeAtColumns(line, cursorCol, cursorCol+1)
+	head := ansi.Truncate(clean, ansi.StringWidth(line[:start]), "")
+	tail := ansi.TruncateLeft(clean, ansi.StringWidth(line[:end]), "")
+	cell := line[start:end]
 	return fitPaneLine(head+style.Render(cell)+tail, width)
-}
-
-func graphemeAtCell(line string, column int) string {
-	for _, span := range graphemeSpans(line) {
-		if column < span.endCell {
-			return span.text
-		}
-	}
-	return " "
 }
 
 func fitPaneLine(line string, width int) string {
