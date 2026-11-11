@@ -26,6 +26,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
@@ -2728,18 +2729,24 @@ func TestDividerDragInFocusCancelsOnEsc(t *testing.T) {
 	}
 }
 
-// paneHas polls the focused session's pane for text typed into it.
-func paneHas(t *testing.T, m *Model, want string) bool {
-	t.Helper()
-	sess := railSelectedSession(m)
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if pane, err := m.services.tmux.CapturePane(sess.ID); err == nil && strings.Contains(pane, want) {
-			return true
-		}
-		time.Sleep(30 * time.Millisecond)
+// wroteToFocus reports whether the focused pane's next queued write sends
+// text, and whether that write carries want. Typed runes travel as a hex
+// send-keys command, so this reads the write itself: a pane is not asked to
+// echo it back, which psmux does not always do by the time a test looks.
+func wroteToFocus(m *Model, want string) bool {
+	job := m.effects.Input.Active
+	if job == nil {
+		return false
 	}
-	return false
+	request, ok := job.Request.(focusruntime.InputRequest)
+	if !ok || request.Value.Kind != focusruntime.Keys {
+		return false
+	}
+	var hex []string
+	for i := 0; i < len(want); i++ {
+		hex = append(hex, fmt.Sprintf("%02x", want[i]))
+	}
+	return strings.Contains(request.Value.Command, "-H "+strings.Join(hex, " "))
 }
 
 // The resize key belongs to the agent while focused: the divider's drag
@@ -2751,11 +2758,10 @@ func TestFocusedResizeKeyStillReachesTheAgent(t *testing.T) {
 	preparedView(m)
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a|b")})
 	m = updated.(*Model)
-	m.drainEffects(t)
 	if m.layout.split.ResizeMode || m.layout.split.Dragging || !m.focused() {
 		t.Fatalf("resize = %v, dragging = %v, focused = %v", m.layout.split.ResizeMode, m.layout.split.Dragging, m.focused())
 	}
-	if !paneHas(t, m, "a|b") {
+	if !wroteToFocus(m, "a|b") {
 		t.Fatal("the resize key never reached the pane")
 	}
 }
@@ -2775,11 +2781,10 @@ func TestKeyDuringAFocusedDragEndsItAndReachesTheAgent(t *testing.T) {
 	}
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c|d")})
 	m = updated.(*Model)
-	m.drainEffects(t)
 	if m.layout.split.Dragging || m.layout.split.ResizeMode || !m.focused() {
 		t.Fatalf("dragging = %v, resize = %v, focused = %v", m.layout.split.Dragging, m.layout.split.ResizeMode, m.focused())
 	}
-	if !paneHas(t, m, "c|d") {
+	if !wroteToFocus(m, "c|d") {
 		t.Fatal("the key typed mid-drag never reached the pane")
 	}
 }
@@ -2799,14 +2804,10 @@ func TestQuitKeyDuringAFocusedDragReachesTheAgent(t *testing.T) {
 	}
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	m = updated.(*Model)
-	m.drainEffects(t)
 	if m.effects.Quitting || m.layout.split.Dragging || !m.focused() {
 		t.Fatalf("quitting = %v, dragging = %v, focused = %v", m.effects.Quitting, m.layout.split.Dragging, m.focused())
 	}
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("-ok")})
-	m = updated.(*Model)
-	m.drainEffects(t)
-	if !paneHas(t, m, "q-ok") {
+	if !wroteToFocus(m, "q") {
 		t.Fatal("the quit key never reached the pane")
 	}
 }
