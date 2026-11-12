@@ -2812,6 +2812,36 @@ func TestQuitKeyDuringAFocusedDragReachesTheAgent(t *testing.T) {
 	}
 }
 
+// A modified key such as Shift+Enter ends a focused drag the way a plain key
+// does, and reaches the agent instead of being dropped under the resize
+// surface.
+func TestModifiedKeyDuringAFocusedDragReachesTheAgent(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	preparedView(m)
+	y0, _ := m.bodyYRange()
+	m = leftPress(m, m.dividerX(), y0+1)
+	m = mouseMotionAt(m, m.dividerX()+6, y0+1)
+	if !m.layout.split.Dragging {
+		t.Fatal("test setup: the drag should be live")
+	}
+
+	updated, _ := m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	m = updated.(*Model)
+	if m.layout.split.Dragging || m.layout.split.ResizeMode || !m.focused() {
+		t.Fatalf("dragging = %v, resize = %v, focused = %v", m.layout.split.Dragging, m.layout.split.ResizeMode, m.focused())
+	}
+	want, _ := tmux.GuardedExtendedKey(tmux.PaneTarget(railSelectedSession(m).ID), "S-Enter")
+	request, ok := focusruntime.InputRequest{}, false
+	if job := m.effects.Input.Active; job != nil {
+		request, ok = job.Request.(focusruntime.InputRequest)
+	}
+	if !ok || request.Value.Kind != focusruntime.Keys || request.Value.Command != want || request.Value.Submit {
+		t.Fatalf("Shift+Enter command = %q, want %q", request.Value.Command, want)
+	}
+}
+
 // Full screen has no divider, so a focused press in that column is the pane's.
 func TestFocusedPressOnTheDividerColumnDoesNotDragInFullScreen(t *testing.T) {
 	t.Parallel()
