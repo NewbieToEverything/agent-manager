@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -2832,13 +2833,40 @@ func TestModifiedKeyDuringAFocusedDragReachesTheAgent(t *testing.T) {
 	if m.layout.split.Dragging || m.layout.split.ResizeMode || !m.focused() {
 		t.Fatalf("dragging = %v, resize = %v, focused = %v", m.layout.split.Dragging, m.layout.split.ResizeMode, m.focused())
 	}
-	want, _ := tmux.GuardedExtendedKey(tmux.PaneTarget(railSelectedSession(m).ID), "S-Enter")
+	want, wantArgs := tmux.GuardedExtendedKey(tmux.PaneTarget(railSelectedSession(m).ID), "S-Enter")
 	request, ok := focusruntime.InputRequest{}, false
 	if job := m.effects.Input.Active; job != nil {
 		request, ok = job.Request.(focusruntime.InputRequest)
 	}
-	if !ok || request.Value.Kind != focusruntime.Keys || request.Value.Command != want || request.Value.Submit {
-		t.Fatalf("Shift+Enter command = %q, want %q", request.Value.Command, want)
+	if !ok || request.Value.Kind != focusruntime.Keys || request.Value.Command != want ||
+		!slices.Equal(request.Value.Args, wantArgs) || request.Value.Submit {
+		t.Fatalf("Shift+Enter = %q %q, want %q %q", request.Value.Command, request.Value.Args, want, wantArgs)
+	}
+}
+
+// The armed keyboard resize keeps the keyboard: a modified key is consumed
+// there, as a plain key is, without ending the gesture or committing a ratio.
+func TestModifiedKeyLeavesAKeyboardResizeAlone(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "keys-resize", t.TempDir(), "")
+	m.selectSessionRow(t, "keys-resize")
+	preparedView(m)
+	updated, _ := m.enterResizeMode()
+	m = updated.(*Model)
+	m.nudgeSplit(4)
+	moved := m.layout.split.Ratio
+
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	m = updated.(*Model)
+	if !m.layout.split.ResizeMode || m.layout.split.Dragging {
+		t.Fatalf("resize = %v, dragging = %v, want the gesture still armed", m.layout.split.ResizeMode, m.layout.split.Dragging)
+	}
+	if m.layout.split.Ratio != moved {
+		t.Fatalf("ratio = %v, want the nudged %v", m.layout.split.Ratio, moved)
+	}
+	if focusInputQueued(m) {
+		t.Fatal("a modified key during the keyboard resize reached a pane")
 	}
 }
 
