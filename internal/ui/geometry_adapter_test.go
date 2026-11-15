@@ -829,3 +829,71 @@ func TestQuitKeyDuringAnArmedFocusedResizeReachesTheAgent(t *testing.T) {
 		t.Fatalf("quitting from the armed list stored %v, want %v", got, m.layout.split.Ratio)
 	}
 }
+
+// A resize key the terminal sends as an extended sequence commits the
+// gesture it armed, rather than being dropped under the surface.
+func TestExtendedResizeKeyCommitsAnArmedGesture(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 100, 40
+	m.services.keys = m.services.keys.With(keybind.Resize, bindingOf(t, "ctrl+@"))
+	m.services.tmux.SetSessionKeys(m.services.keys)
+
+	updated, _ := m.Update(uifocus.ExtendedKeyMsg{Name: "C-Space"})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if !m.layout.split.ResizeMode {
+		t.Fatal("Ctrl+Space should arm a resize bound to ctrl+@")
+	}
+	before := m.layout.split.Ratio
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(*Model)
+	m.drainEffects(t)
+
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "C-Space"})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if m.layout.split.ResizeMode {
+		t.Fatal("the second Ctrl+Space should commit and leave the mode")
+	}
+	if !m.focused() {
+		t.Fatalf("committing left focus, screen = %v", m.screenID())
+	}
+	if got, want := uigeometrypanes.Load(m.services.store), m.layout.split.Ratio; got != want || got == before {
+		t.Fatalf("stored ratio = %v, want the nudged %v", got, want)
+	}
+}
+
+// Ending an armed gesture with a key the agent owns keeps the nudges made
+// with the keyboard, which never set the drag-only Moved flag.
+func TestKeyEndingAnArmedFocusedResizeKeepsTheNudge(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 100, 40
+	preparedView(m)
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	before := m.layout.split.Ratio
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	nudged := m.layout.split.Ratio
+	if nudged == before {
+		t.Fatal("test setup: the arrow should have nudged the divider")
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	m = updated.(*Model)
+	queued := wroteToFocus(m, "q")
+	m.drainEffects(t)
+	if m.effects.Quitting || m.layout.split.ResizeMode {
+		t.Fatalf("quitting = %v, resize = %v", m.effects.Quitting, m.layout.split.ResizeMode)
+	}
+	if !queued {
+		t.Fatal("the key that ended the gesture never reached the pane")
+	}
+	if got := uigeometrypanes.Load(m.services.store); got != nudged {
+		t.Fatalf("stored ratio = %v, want the nudged %v (the nudge was thrown away)", got, nudged)
+	}
+}

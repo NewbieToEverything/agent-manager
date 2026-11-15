@@ -85,7 +85,7 @@ func (s *Surface) Key(_ surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
 		// Over a focused pane the keyboard is the agent's: a key that is not
 		// the gesture's ends it where it stands and travels on, as it does
 		// while a mouse drag holds it.
-		s.root.Exit(gesture.Moved)
+		s.root.Exit(gesture.Changed())
 		return false, nil
 	}
 	return true, nil

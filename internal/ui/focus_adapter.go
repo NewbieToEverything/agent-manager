@@ -15,6 +15,7 @@ import (
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
@@ -66,6 +67,17 @@ func ReadExtendedKey(msg tea.Msg) tea.Msg { return uifocus.ExtendedKey(msg) }
 // forwardExtendedKey sends a modified key to the focused pane while focus
 // holds the keyboard. Anywhere else it is dropped, as Bubble Tea drops it.
 func (m *Model) forwardExtendedKey(msg uifocus.ExtendedKeyMsg) tea.Cmd {
+	// An armed gesture holds the keyboard: a key it names, its own resize key
+	// included, commits it there instead of being dropped by the focus check
+	// below, which only knows the focus surface.
+	if key, ok := uifocus.BindableKey(msg.Name); ok {
+		if top, on := m.top(); on {
+			if _, resize := top.(*uigeometry.Surface); resize {
+				_, cmd := top.Key(m, key)
+				return cmd
+			}
+		}
+	}
 	// A drag the mouse started holds the keyboard only until the first key,
 	// which ends it where it stands, plain or modified alike. Without this the
 	// resize surface on top drops the key instead of forwarding it. The armed

@@ -35,6 +35,16 @@ var bindableExtendedKeys = map[string]tea.KeyType{
 	"C-Space": tea.KeyCtrlAt,
 }
 
+// BindableKey is the key a decoded extended name stands for, when a table can
+// name it: Ctrl+Space arrives this way and is spelled ctrl+@.
+func BindableKey(name string) (tea.KeyMsg, bool) {
+	keyType, ok := bindableExtendedKeys[name]
+	if !ok {
+		return tea.KeyMsg{}, false
+	}
+	return tea.KeyMsg{Type: keyType}, true
+}
+
 // reachesLegacyPane reports whether tmux delivers name intact to a pane that
 // never asked for extended keys. Alt alone arrives there as an ESC prefix on
 // the bare key. tmux 3.1 to 3.5 turn any other modified key into the bare key,
