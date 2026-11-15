@@ -141,7 +141,7 @@ func (s *Model) ExtendedKeyPress(h KeyHost, msg ExtendedKeyMsg) tea.Cmd {
 	}
 	if keyType, ok := bindableExtendedKeys[msg.Name]; ok {
 		key := tea.KeyMsg{Type: keyType}
-		if keys := h.Bindings(key.String()); keys.Saved || keys.Detach || keys.Editor || keys.Review {
+		if keys := h.Bindings(key.String()); keys.Saved || keys.Detach || keys.Editor || keys.Review || keys.Resize {
 			_, cmd := s.KeyPress(h, key)
 			return cmd
 		}

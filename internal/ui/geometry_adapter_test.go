@@ -9,10 +9,12 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestSplitWidthsUsesRatio(t *testing.T) {
@@ -213,6 +215,25 @@ func TestFocusedResizeCancelRestoresTheRatio(t *testing.T) {
 	}
 	if left, _ := m.splitWidths(); left != 34 {
 		t.Fatalf("esc restored left=%d, want 34", left)
+	}
+}
+
+// A resize key the terminal sends as an extended sequence still arms the
+// gesture: ctrl+@ arrives as Ctrl+Space, and the session binding decides.
+func TestExtendedResizeKeyArmsTheDivider(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.services.keys = m.services.keys.With(keybind.Resize, bindingOf(t, "ctrl+@"))
+	m.services.tmux.SetSessionKeys(m.services.keys)
+
+	updated, _ := m.Update(uifocus.ExtendedKeyMsg{Name: "C-Space"})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if !m.layout.split.ResizeMode || !m.focused() {
+		t.Fatalf("Ctrl+Space on a resize bound to ctrl+@: resize = %v, focused = %v", m.layout.split.ResizeMode, m.focused())
+	}
+	if focusInputQueued(m) {
+		t.Fatal("the extended resize key reached the agent")
 	}
 }
 
@@ -709,5 +730,102 @@ func TestDeadSessionQueuesNoResize(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// The armed gesture speaks the table of the screen it sits on: a focused
+// session commits on its own resize key, and names that key in the legend,
+// even when the list keeps the default.
+func TestFocusedResizeSpeaksTheSessionTable(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 100, 40
+	m.services.keys = m.services.keys.With(keybind.Resize, bindingOf(t, "ctrl+@"))
+	m.services.tmux.SetSessionKeys(m.services.keys)
+	preparedView(m)
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlAt})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if !m.layout.split.ResizeMode {
+		t.Fatal("ctrl+@ should arm the divider from the session table")
+	}
+	ratio := m.layout.split.Ratio
+	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "ctrl+@ / release commit") {
+		t.Fatalf("armed legend names the wrong key: %q", footer)
+	}
+
+	// A key the session table does not bind ends the gesture and travels on
+	// instead of committing.
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if m.layout.split.ResizeMode {
+		t.Fatal("ctrl+] is not the session's resize key, so it ends the gesture")
+	}
+	if m.layout.split.Ratio != ratio {
+		t.Fatalf("a key outside the session's resize binding committed: ratio = %v, want %v", m.layout.split.Ratio, ratio)
+	}
+
+	// The session's own key commits.
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlAt})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlAt})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if m.layout.split.ResizeMode {
+		t.Fatal("the session resize key should commit and leave the mode")
+	}
+	if !m.focused() {
+		t.Fatalf("committing left focus, screen = %v", m.screenID())
+	}
+}
+
+// The armed gesture hands a key it does not own back to a focused agent, and
+// the quit key is one of those: on the list it still quits.
+func TestQuitKeyDuringAnArmedFocusedResizeReachesTheAgent(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 100, 40
+	preparedView(m)
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if !m.layout.split.ResizeMode {
+		t.Fatal("test setup: the divider should be armed")
+	}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	m = updated.(*Model)
+	queued := wroteToFocus(m, "q")
+	m.drainEffects(t)
+	if m.effects.Quitting {
+		t.Fatal("the quit key quit the manager over a focused agent")
+	}
+	if m.layout.split.ResizeMode {
+		t.Fatal("the quit key should have ended the gesture")
+	}
+	if !m.focused() {
+		t.Fatalf("the quit key left focus, screen = %v", m.screenID())
+	}
+	if !queued {
+		t.Fatal("the quit key never reached the pane")
+	}
+
+	st := m.services.store
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if !m.effects.Quitting || cmd == nil {
+		t.Fatal("the list's quit key should still quit")
+	}
+	if got := uigeometrypanes.Load(st); got != m.layout.split.Ratio {
+		t.Fatalf("quitting from the armed list stored %v, want %v", got, m.layout.split.Ratio)
 	}
 }

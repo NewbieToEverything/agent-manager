@@ -272,3 +272,20 @@ func TestExtendedKeyPressRunsABoundManagerKey(t *testing.T) {
 		}
 	}
 }
+
+// A resize binding on the session table arms the divider from the focus
+// layer instead of forwarding the key.
+func TestKeyPressArmsTheDividerOnTheSessionBinding(t *testing.T) {
+	host := &fakeKeyHost{id: "s", selected: true, keys: Bindings{Resize: true}}
+	focused := &Model{}
+	focused.Enter(EnterContext{SessionID: "s"})
+	if _, cmd := focused.KeyPress(host, tea.KeyMsg{Type: tea.KeyCtrlCloseBracket}); cmd != nil {
+		t.Fatal("arming the divider returned a command")
+	}
+	if !host.resize {
+		t.Fatal("the resize binding did not reach the root")
+	}
+	if len(host.writes) != 0 {
+		t.Fatalf("the resize key was written to the pane: %#v", host.writes)
+	}
+}

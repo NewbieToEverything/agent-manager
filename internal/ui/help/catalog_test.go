@@ -267,3 +267,23 @@ func TestCatalogNamesTheSetupStepKeys(t *testing.T) {
 		t.Fatalf("click row = %q", rows["setup step/click command"])
 	}
 }
+
+// A focused session's key map names the divider it can arm, with the
+// session's own binding rather than the list's.
+func TestSessionKeyMapNamesTheDivider(t *testing.T) {
+	ctx := testContext(84)
+	ctx.SessionKeys = ctx.SessionKeys.With(keybind.Resize, bindingOf(t, "ctrl+@"))
+	rows := map[string]string{}
+	for _, section := range helpSections(ctx) {
+		for _, row := range section.rows {
+			rows[section.title+"/"+row[0]] = row[1]
+		}
+	}
+	const title = "inside a session (attached or focused)"
+	if got := rows[title+"/ctrl+@"]; got != resizeHelp(ctx.Glyphs.Mode) {
+		t.Fatalf("session resize row = %q, want %q", got, resizeHelp(ctx.Glyphs.Mode))
+	}
+	if _, stale := rows[title+"/ctrl+]"]; stale {
+		t.Fatal("the default resize key remains after the session binding moved")
+	}
+}

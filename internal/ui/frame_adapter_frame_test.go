@@ -914,3 +914,20 @@ func TestQuickPromptFooterKeys(t *testing.T) {
 		t.Errorf("missing ctrl+t worktree pair: %q", footerTwo)
 	}
 }
+
+// The focused footer names the divider key in the split, where the gesture
+// can move something, and leaves it out full screen, where its footer keeps
+// one row.
+func TestFocusedFooterNamesTheDividerOnlyInTheSplit(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	preparedView(m)
+	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "ctrl+] resize") {
+		t.Fatalf("focused footer omits the divider: %q", footer)
+	}
+	m.prefs.fullLayout = true
+	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "resize") {
+		t.Fatalf("full focus footer names the divider: %q", footer)
+	}
+}
