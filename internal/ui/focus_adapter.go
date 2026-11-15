@@ -54,6 +54,9 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m, m.focus.pane.ApplyFrame(uifocus.FrameMessage(msg), focusFrameHost{m}))
 
 	case uifocus.ExtendedKeyMsg:
+		if model, cmd, ok := m.routeExtendedOnTheList(msg); ok {
+			return routed(model, cmd)
+		}
 		return routed(m, m.forwardExtendedKey(msg))
 	}
 	return nil, nil, false
@@ -64,25 +67,48 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 // sequence.
 func ReadExtendedKey(msg tea.Msg) tea.Msg { return uifocus.ExtendedKey(msg) }
 
+// routeExtendedOnTheList sends a modified key the list's own table names
+// through the list, for a terminal that reads it as a CSI sequence: a resize
+// key set to ctrl+@ arrives that way, and the list would drop it.
+func (m *Model) routeExtendedOnTheList(msg uifocus.ExtendedKeyMsg) (tea.Model, tea.Cmd, bool) {
+	key, ok := uifocus.BindableKey(msg.Name)
+	if !ok || m.effects.Quitting || m.base != baseList {
+		return nil, nil, false
+	}
+	if !m.services.listKeys.Binding(keybind.Resize).Has(key.String()) {
+		return nil, nil, false
+	}
+	top, _ := m.top()
+	switch top.(type) {
+	case *uifocus.Surface, *uigeometry.Surface:
+		return nil, nil, false
+	}
+	model, cmd := m.handleKey(key)
+	return model, cmd, true
+}
+
 // forwardExtendedKey sends a modified key to the focused pane while focus
 // holds the keyboard. Anywhere else it is dropped, as Bubble Tea drops it.
 func (m *Model) forwardExtendedKey(msg uifocus.ExtendedKeyMsg) tea.Cmd {
-	// An armed gesture holds the keyboard: a key it names, its own resize key
-	// included, commits it there instead of being dropped by the focus check
-	// below, which only knows the focus surface.
-	if key, ok := uifocus.BindableKey(msg.Name); ok {
-		if top, on := m.top(); on {
-			if _, resize := top.(*uigeometry.Surface); resize {
-				_, cmd := top.Key(m, key)
-				return cmd
+	// A gesture holds the keyboard only for the keys it names: those commit
+	// it here, where the focus check below would drop them. Every other key
+	// ends it where it stands and travels on, as a plain key does, so a
+	// focused agent keeps Shift+Enter and the rest.
+	if top, on := m.top(); on {
+		if s, resize := top.(*uigeometry.Surface); resize {
+			if key, ok := uifocus.BindableKey(msg.Name); ok {
+				if handled, cmd := s.Key(m, key); handled {
+					return cmd
+				}
+			} else if m.focused() && (m.layout.split.ResizeMode || m.layout.split.Dragging) {
+				// Over a focused pane the keyboard is the agent's, so a key the
+				// surface cannot even name ends the gesture and travels on.
+				m.exitResizeMode(m.layout.split.Changed())
 			}
 		}
 	}
-	// A drag the mouse started holds the keyboard only until the first key,
-	// which ends it where it stands, plain or modified alike. Without this the
-	// resize surface on top drops the key instead of forwarding it. The armed
-	// keyboard resize keeps the keyboard, as it does for a plain key, and a
-	// modified key there is consumed rather than forwarded.
+	// A drag the mouse started without arming the keyboard ends on the first
+	// key, whatever it is.
 	if m.layout.split.Dragging && !m.layout.split.ResizeMode {
 		m.exitResizeMode(m.layout.split.Moved)
 	}

@@ -245,7 +245,7 @@ func TestCatalogNamesTheSavedPromptKeys(t *testing.T) {
 	if rows["saved prompts/ctrl+s"] != "save" || rows["saved prompts/ctrl+o"] != "open the list" {
 		t.Fatalf("saved prompts section = %v", rows)
 	}
-	if rows["inside a session (attached or focused)/f6"] != "open saved prompts and paste the pick" {
+	if rows["inside a session (attached or focused)/f6"] != "focused: open saved prompts and paste the pick" {
 		t.Fatal("the session section does not follow the saved prompt binding")
 	}
 }
@@ -280,7 +280,7 @@ func TestSessionKeyMapNamesTheDivider(t *testing.T) {
 		}
 	}
 	const title = "inside a session (attached or focused)"
-	if got := rows[title+"/ctrl+@"]; got != resizeHelp(ctx.Glyphs.Mode) {
+	if got := rows[title+"/ctrl+@"]; got != "focused: "+resizeHelp(ctx.Glyphs.Mode) {
 		t.Fatalf("session resize row = %q, want %q", got, resizeHelp(ctx.Glyphs.Mode))
 	}
 	if _, stale := rows[title+"/ctrl+]"]; stale {

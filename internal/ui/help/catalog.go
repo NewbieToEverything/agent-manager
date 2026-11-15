@@ -262,10 +262,12 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string, 
 		rows = append(rows, [2]string{label, "open its directory in an editor"})
 	}
 	if label := keys.Binding(keybind.Resize).Label(); label != "" {
-		rows = append(rows, [2]string{label, resizeHelp(mode)})
+		// The section covers an attach too, where no resize binding is
+		// installed, so the row names the screen that keeps it.
+		rows = append(rows, [2]string{label, "focused: " + resizeHelp(mode)})
 	}
 	if label := keys.Binding(keybind.SavedPrompt).Label(); label != "" {
-		rows = append(rows, [2]string{label, "open saved prompts and paste the pick"})
+		rows = append(rows, [2]string{label, "focused: open saved prompts and paste the pick"})
 	}
 	if label := keys.Binding(keybind.TmuxPrefix).Label(); label != "" {
 		rows = append(rows, [2]string{label, "attached: tmux's prefix, in place of yours"})
@@ -280,7 +282,7 @@ func resizeHelp(mode presentation.GlyphMode) string {
 	if mode.Effective() == presentation.GlyphModeBasic {
 		return "resize split: left/right, h/l, drag; enter sets, esc cancels"
 	}
-	return "resize the split (←→ or hl, or drag; ↵ commits, esc cancels)"
+	return "resize the split (←→ or hl, drag; ↵ commits, esc cancels)"
 }
 
 func titledWith(name string, list keybind.Table, mode presentation.GlyphMode, actions ...string) string {

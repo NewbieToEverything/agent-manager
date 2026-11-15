@@ -2083,8 +2083,11 @@ func TestFlexChromeRowsMatchThePaintedCard(t *testing.T) {
 	}
 }
 
-// The key picker spends every row the terminal has on its list, short of
-// what a table heading and the "more" counter can push past the window.
+// The key picker spends every row the terminal has on its list. It can fall
+// short by two when the next row would open a new table, since that costs a
+// blank line and a heading before the row itself. TestKeyWindowFitsAndShowsTheCursor
+// in the settings package pins what is left: the window fits its room and
+// keeps the cursor's row visible at every cursor position.
 func TestKeyPickerFillsTheTerminal(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width = 160

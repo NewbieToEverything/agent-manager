@@ -2,14 +2,17 @@ package ui
 
 import (
 	"errors"
-	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
@@ -84,7 +87,7 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 	}
 }
 
-func TestArrowNudgeAndPipeCommits(t *testing.T) {
+func TestArrowNudgeAndResizeKeyCommits(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	st := m.services.store
@@ -755,22 +758,57 @@ func TestFocusedResizeSpeaksTheSessionTable(t *testing.T) {
 		t.Fatalf("armed legend names the wrong key: %q", footer)
 	}
 
-	// A key the session table does not bind ends the gesture and travels on
-	// instead of committing.
+	// A key the session table does not bind ends the gesture where it stands,
+	// keeping a nudge that had already moved the divider.
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	nudged := m.layout.split.Ratio
+	if nudged == ratio {
+		t.Fatal("test setup: the arrow should have nudged the divider")
+	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 	m = updated.(*Model)
 	m.drainEffects(t)
 	if m.layout.split.ResizeMode {
 		t.Fatal("ctrl+] is not the session's resize key, so it ends the gesture")
 	}
-	if m.layout.split.Ratio != ratio {
-		t.Fatalf("a key outside the session's resize binding committed: ratio = %v, want %v", m.layout.split.Ratio, ratio)
+	if m.layout.split.Ratio != nudged {
+		t.Fatalf("ending the gesture discarded the nudge: ratio = %v, want %v", m.layout.split.Ratio, nudged)
+	}
+	if got := uigeometrypanes.Load(m.services.store); uigeometrypanes.RatioText(got) != uigeometrypanes.RatioText(nudged) {
+		t.Fatalf("stored ratio = %v, want the nudged %v", got, nudged)
 	}
 
-	// The session's own key commits.
+	// A gesture that changed nothing persists nothing: the saved value stays
+	// where it was and no save reaches the lane.
+	stored := uigeometrypanes.Load(m.services.store)
+	m.effects.Main.Pending = nil
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlAt})
+	m = updated.(*Model)
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m = updated.(*Model)
+	if m.layout.split.ResizeMode {
+		t.Fatal("the foreign key should end the gesture")
+	}
+	for _, job := range m.effects.Main.Pending {
+		if _, save := job.Request.(uigeometrypanes.SplitSaveRequest); save {
+			t.Fatal("a gesture that moved nothing queued a save")
+		}
+	}
+	m.drainEffects(t)
+	if got := uigeometrypanes.Load(m.services.store); got != stored {
+		t.Fatalf("stored ratio = %v, want the unchanged %v", got, stored)
+	}
+
+	// The session's own key commits, and the nudge it carries is stored.
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlAt})
 	m = updated.(*Model)
 	m.drainEffects(t)
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	committed := m.layout.split.Ratio
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlAt})
 	m = updated.(*Model)
 	m.drainEffects(t)
@@ -779,6 +817,9 @@ func TestFocusedResizeSpeaksTheSessionTable(t *testing.T) {
 	}
 	if !m.focused() {
 		t.Fatalf("committing left focus, screen = %v", m.screenID())
+	}
+	if got := uigeometrypanes.Load(m.services.store); got != committed {
+		t.Fatalf("stored ratio = %v, want the committed %v", got, committed)
 	}
 }
 
@@ -812,21 +853,20 @@ func TestQuitKeyDuringAnArmedFocusedResizeReachesTheAgent(t *testing.T) {
 		t.Fatal("the quit key never reached the pane")
 	}
 
-	st := m.services.store
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
 	m = updated.(*Model)
 	m.drainEffects(t)
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 	m = updated.(*Model)
 	m.drainEffects(t)
+	if !m.layout.split.ResizeMode {
+		t.Fatal("test setup: the list's divider should be armed")
+	}
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	m = updated.(*Model)
 	m.drainEffects(t)
 	if !m.effects.Quitting || cmd == nil {
 		t.Fatal("the list's quit key should still quit")
-	}
-	if got := uigeometrypanes.Load(st); got != m.layout.split.Ratio {
-		t.Fatalf("quitting from the armed list stored %v, want %v", got, m.layout.split.Ratio)
 	}
 }
 
@@ -895,5 +935,149 @@ func TestKeyEndingAnArmedFocusedResizeKeepsTheNudge(t *testing.T) {
 	}
 	if got := uigeometrypanes.Load(m.services.store); got != nudged {
 		t.Fatalf("stored ratio = %v, want the nudged %v (the nudge was thrown away)", got, nudged)
+	}
+}
+
+// A modified key the armed gesture does not handle still reaches the agent:
+// Shift+Tab is a manager binding only when a table names it, and Ctrl+Space
+// may belong to the agent's own mode keys.
+func TestExtendedKeyTheGestureDoesNotHandleReachesTheAgent(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 100, 40
+	preparedView(m)
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if !m.layout.split.ResizeMode {
+		t.Fatal("test setup: the divider should be armed")
+	}
+
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Tab"})
+	m = updated.(*Model)
+	if m.layout.split.ResizeMode {
+		t.Fatal("a foreign modified key should end the gesture")
+	}
+	if !m.focused() {
+		t.Fatalf("the key left focus, screen = %v", m.screenID())
+	}
+	request, ok := focusruntime.InputRequest{}, false
+	if job := m.effects.Input.Active; job != nil {
+		request, ok = job.Request.(focusruntime.InputRequest)
+	}
+	want, wantArgs := tmux.GuardedExtendedKey(tmux.PaneTarget(railSelectedSession(m).ID), "S-Tab")
+	if !ok || request.Value.Kind != focusruntime.Keys || request.Value.Command != want || !slices.Equal(request.Value.Args, wantArgs) {
+		t.Fatalf("Shift+Tab = %q %q, want %q %q", request.Value.Command, request.Value.Args, want, wantArgs)
+	}
+}
+
+// The full screen layout paints no divider, so the resize key does nothing
+// there: no gesture, no stored ratio, and the keys a focused session needs
+// stay theirs.
+func TestFullScreenArmsNothing(t *testing.T) {
+	t.Parallel()
+	for _, focused := range []bool{false, true} {
+		m := buildModel(t)
+		createSession(t, m, "alpha", t.TempDir(), "")
+		m.selectSessionRow(t, "alpha")
+		if focused {
+			updated, _ := m.focusSelected()
+			m = updated.(*Model)
+			m.drainEffects(t)
+		}
+		m.prefs.fullLayout = true
+		m.layout.width, m.layout.height = 120, 40
+		preparedView(m)
+		before := uigeometrypanes.RatioText(m.layout.split.Ratio)
+
+		updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+		m = updated.(*Model)
+		m.drainEffects(t)
+		if m.layout.split.ResizeMode || m.layout.split.Dragging {
+			t.Fatalf("focused=%v: the key armed a gesture with no divider", focused)
+		}
+		if focusInputQueued(m) {
+			t.Fatalf("focused=%v: the resize key reached the agent", focused)
+		}
+		updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+		m = updated.(*Model)
+		m.drainEffects(t)
+		if got := uigeometrypanes.RatioText(uigeometrypanes.Load(m.services.store)); got != before {
+			t.Fatalf("focused=%v: full screen stored %s, want %s", focused, got, before)
+		}
+	}
+}
+
+// A modified key the resize surface cannot even name still ends an armed
+// gesture over a focused pane and reaches the agent: Shift+Enter is the
+// agent's newline.
+func TestUnbindableModifiedKeyEndsAnArmedGesture(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	m.layout.width, m.layout.height = 100, 40
+	preparedView(m)
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if !m.layout.split.ResizeMode {
+		t.Fatal("test setup: the divider should be armed")
+	}
+
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	m = updated.(*Model)
+	if m.layout.split.ResizeMode {
+		t.Fatal("Shift+Enter should end the gesture")
+	}
+	if !m.focused() {
+		t.Fatalf("the key left focus, screen = %v", m.screenID())
+	}
+	request, ok := focusruntime.InputRequest{}, false
+	if job := m.effects.Input.Active; job != nil {
+		request, ok = job.Request.(focusruntime.InputRequest)
+	}
+	want, wantArgs := tmux.GuardedExtendedKey(tmux.PaneTarget(railSelectedSession(m).ID), "S-Enter")
+	if !ok || request.Value.Command != want || !slices.Equal(request.Value.Args, wantArgs) {
+		t.Fatalf("Shift+Enter = %q %q, want %q %q", request.Value.Command, request.Value.Args, want, wantArgs)
+	}
+}
+
+// A modified key the surface cannot name leaves the list's armed gesture
+// alone: only a focused session hands the keyboard to the agent.
+func TestUnbindableModifiedKeyLeavesTheListsResizeAlone(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	preparedView(m)
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if !m.layout.split.ResizeMode {
+		t.Fatal("test setup: the list's divider should be armed")
+	}
+
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if !m.layout.split.ResizeMode {
+		t.Fatal("Shift+Enter ended the list's gesture; the list swallows it")
+	}
+}
+
+// The full screen list footer does not offer a key that cannot work there.
+func TestFullScreenListFooterLeavesTheResizeKeyOut(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.prefs.fullLayout = true
+	m.layout.width, m.layout.height = 240, 40
+	preparedView(m)
+	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "resize") {
+		t.Fatalf("full screen list footer names resize: %q", footer)
+	}
+	m.prefs.fullLayout = false
+	preparedView(m)
+	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "resize") {
+		t.Fatalf("split footer omits resize: %q", footer)
 	}
 }

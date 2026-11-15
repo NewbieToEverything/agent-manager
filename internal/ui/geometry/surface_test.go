@@ -134,3 +134,41 @@ func TestMouseDragLeavesTheQuitKeyToAFocusedAgent(t *testing.T) {
 		}
 	}
 }
+
+// Over a focused pane a key the armed gesture does not name ends it where it
+// stands and is left for the agent, carrying whatever the keyboard changed.
+func TestArmedGestureLetsAForeignKeyThrough(t *testing.T) {
+	for _, moved := range []bool{false, true} {
+		root := &fakeRoot{
+			gesture: Gesture{Ratio: 0.34, RatioBefore: 0.34, ResizeMode: true},
+			agent:   true,
+		}
+		if moved {
+			root.gesture.Ratio = 0.4
+		}
+		s := NewSurface(root, keybind.DefaultSession())
+		handled, _ := s.Key(nil, key("q"))
+		if handled {
+			t.Fatalf("moved = %v: the foreign key was consumed instead of reaching the agent", moved)
+		}
+		if len(root.exits) != 1 || root.exits[0] != moved {
+			t.Fatalf("moved = %v: exits = %v, want one %v", moved, root.exits, moved)
+		}
+		if root.quit {
+			t.Fatal("the quit key quit over a focused agent")
+		}
+	}
+}
+
+// On the list the same key is consumed, as it always was.
+func TestArmedGestureKeepsAForeignKeyOnTheList(t *testing.T) {
+	root := &fakeRoot{gesture: Gesture{Ratio: 0.34, RatioBefore: 0.34, ResizeMode: true}}
+	s := NewSurface(root, keybind.DefaultList())
+	handled, _ := s.Key(nil, key("n"))
+	if !handled {
+		t.Fatal("the list consumed a key it does not answer to")
+	}
+	if len(root.exits) != 0 {
+		t.Fatalf("the list ended the gesture on a foreign key: %v", root.exits)
+	}
+}

@@ -72,6 +72,12 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 // resizeAllowed reports whether the divider gesture may arm: on the clear
 // list, or over a focused pane the same gesture already drags.
 func (m *Model) resizeAllowed() bool {
+	// The full screen layout paints no divider: the mouse refuses there too,
+	// and arming would only take the keyboard for a gesture with nothing to
+	// move.
+	if m.prefs.fullLayout {
+		return false
+	}
 	if m.focused() {
 		return true
 	}

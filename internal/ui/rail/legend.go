@@ -187,7 +187,12 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 		{k(keybind.Help), "keys"}, {k(keybind.Quit), "quit"}, {k(keybind.NewConnection), "connection"},
 	}...)
 	add(false, [2]string{k(keybind.ReorderUp, keybind.ReorderDown), "reorder"})
-	add(true, [][2]string{{foldAllKey, foldAllAction}, {k(keybind.Resize), "resize"}, {k(keybind.Settings), "settings"}}...)
+	tail := [][2]string{{foldAllKey, foldAllAction}}
+	if !ctx.FullLayout {
+		// Full screen paints no divider, so the key has nothing to move there.
+		tail = append(tail, [2]string{k(keybind.Resize), "resize"})
+	}
+	add(true, append(tail, [2]string{k(keybind.Settings), "settings"})...)
 
 	return Legend{Title: "View", Quiet: true, Alerts: alerts, Pairs: pairs, ActionPairs: actions}
 }

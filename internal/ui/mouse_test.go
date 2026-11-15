@@ -777,7 +777,7 @@ func TestClickInContentColumnFocusesTheSelectedSession(t *testing.T) {
 }
 
 // A press directly on the divider arms the drag on the spot: it must not
-// need `|` pressed first. It arms dragging alone, leaving resizeMode — the
+// need the resize key pressed first. It arms dragging alone, leaving resizeMode — the
 // keyboard's own gate — off, and it moves nothing until the pointer does.
 func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 	m := &Model{
@@ -2750,20 +2750,19 @@ func wroteToFocus(m *Model, want string) bool {
 	return strings.Contains(request.Value.Command, "-H "+strings.Join(hex, " "))
 }
 
-// Ordinary typing reaches the agent while focused, the "|" character the
-// old split key used included: the divider's gesture takes its own key and
-// nothing else.
+// Ordinary typing reaches the agent while focused, the "|" the old split key
+// used included: the divider's gesture takes its own key and nothing else.
 func TestFocusedTypingStillReachesTheAgent(t *testing.T) {
 	t.Parallel()
 	m := focusedModel(t)
 	preparedView(m)
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a|b")})
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("|")})
 	m = updated.(*Model)
 	if m.layout.split.ResizeMode || m.layout.split.Dragging || !m.focused() {
 		t.Fatalf("resize = %v, dragging = %v, focused = %v", m.layout.split.ResizeMode, m.layout.split.Dragging, m.focused())
 	}
-	if !wroteToFocus(m, "a|b") {
-		t.Fatal("the resize key never reached the pane")
+	if !wroteToFocus(m, "|") {
+		t.Fatal("the old split key never reached the pane")
 	}
 }
 
