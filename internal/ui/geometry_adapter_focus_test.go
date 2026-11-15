@@ -57,11 +57,12 @@ func TestExtendedResizeKeyArmsTheDivider(t *testing.T) {
 
 	updated, _ := m.Update(uifocus.ExtendedKeyMsg{Name: "C-Space"})
 	m = updated.(*Model)
+	queued := focusInputQueued(m)
 	m.drainEffects(t)
 	if !m.layout.split.ResizeMode || !m.focused() {
 		t.Fatalf("Ctrl+Space on a resize bound to ctrl+@: resize = %v, focused = %v", m.layout.split.ResizeMode, m.focused())
 	}
-	if focusInputQueued(m) {
+	if queued {
 		t.Fatal("the extended resize key reached the agent")
 	}
 }
@@ -133,25 +134,27 @@ func TestFocusedResizeKeyArmsTheDivider(t *testing.T) {
 	m.layout.width, m.layout.height, m.layout.split.Ratio = 100, 40, 0.34
 	before := m.layout.split.Ratio
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
-	m.drainEffects(t)
 	m = updated.(*Model)
+	armedQueued := focusInputQueued(m)
+	m.drainEffects(t)
 	if !m.layout.split.ResizeMode || m.layout.split.Dragging {
 		t.Fatalf("ctrl+] should arm the divider, resize = %v, dragging = %v", m.layout.split.ResizeMode, m.layout.split.Dragging)
 	}
 	if !m.focused() {
 		t.Fatalf("arming the divider left focus, screen = %v", m.screenID())
 	}
-	if focusInputQueued(m) {
+	if armedQueued {
 		t.Fatal("the resize key reached the agent")
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.drainEffects(t)
 	m = updated.(*Model)
+	nudgeQueued := focusInputQueued(m)
+	m.drainEffects(t)
 	if left, _ := m.splitWidths(); left <= 34 {
 		t.Fatalf("right arrow left the divider at %d", left)
 	}
-	if focusInputQueued(m) {
+	if nudgeQueued {
 		t.Fatal("a nudge reached the agent")
 	}
 
@@ -277,11 +280,12 @@ func TestFullScreenArmsNothing(t *testing.T) {
 
 		updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 		m = updated.(*Model)
+		queued := focusInputQueued(m)
 		m.drainEffects(t)
 		if m.layout.split.ResizeMode || m.layout.split.Dragging {
 			t.Fatalf("focused=%v: the key armed a gesture with no divider", focused)
 		}
-		if focusInputQueued(m) {
+		if queued {
 			t.Fatalf("focused=%v: the resize key reached the agent", focused)
 		}
 		updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
