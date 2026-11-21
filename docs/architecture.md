@@ -8,6 +8,7 @@ invariants live in [AGENTS.md](../AGENTS.md).
 Under `internal/`:
 
 - `app`: assembles the local services and owns their lifetime.
+- `inputguard`: frames terminal input for Bubble Tea: complete messages, a trailing incomplete CSI or partial UTF-8; installed only for a Unix terminal.
 - `sessioncmd`: the session commands (spawn, archive, revive, messages, tasks). `Lifecycle` runs ordered effects.
 - `cli`, `mcpserver`: translate shell and MCP requests into `sessioncmd` commands.
 - `execution`: UI-free poller and runner: capture, delivery, mailbox, status, notifications.
