@@ -44,7 +44,7 @@ func (g GlyphSet) StatusGlyph(s string) string {
 	case "errored":
 		return erroredGlyph
 	case "dead":
-		return g.CrossGlyph
+		return g.DeadGlyph
 	default:
 		return g.IdleGlyph
 	}
@@ -57,7 +57,7 @@ type GlyphSet struct {
 	FeedGlyph, UpdateGlyph, DownloadGlyph, RefreshGlyph                                           string
 	WarningGlyph, CardErrorGlyph, DiffErrorGlyph, DiffCleanGlyph, DiffDoneGlyph, DiffPendingGlyph string
 	WorktreeGlyph, AfterTurnArchiveGlyph, AfterTurnKillGlyph                                      string
-	WorkingGlyph, StartingGlyph, WaitingGlyph, FinishedGlyph, CrossGlyph, IdleGlyph               string
+	WorkingGlyph, StartingGlyph, WaitingGlyph, FinishedGlyph, DeadGlyph, CrossGlyph, IdleGlyph    string
 	ReorderGrip, InboxGlyph, BranchGlyph, GroupOpenGlyph, GroupClosedGlyph                        string
 	ShellGlyph, LoaderHead, LoaderTail, LoaderRest                                                string
 	HeadsUpGlyph, TipGlyph, FeatureGlyph, FixGlyph, OtherGlyph, StartedGlyph, PeopleGlyph         string
@@ -68,7 +68,7 @@ type GlyphSet struct {
 func GlyphsFor(mode GlyphMode) GlyphSet {
 	if mode.Effective() == GlyphModeAdvanced {
 		return GlyphSet{
-			WorkingGlyph: "◐", StartingGlyph: "◌", WaitingGlyph: "◆", FinishedGlyph: "●", CrossGlyph: "✕", IdleGlyph: "○",
+			WorkingGlyph: "◐", StartingGlyph: "◌", WaitingGlyph: "◆", FinishedGlyph: "●", DeadGlyph: "✕", CrossGlyph: "✕", IdleGlyph: "○",
 			ReorderGrip: "⠿", InboxGlyph: "✉", BranchGlyph: "⑂", GroupOpenGlyph: "▾", GroupClosedGlyph: "▸",
 			ShellGlyph: "❯", LoaderHead: "●", LoaderTail: "•", LoaderRest: "·",
 			PromptGlyph: "❯", ReplyGlyph: "↳", SearchGlyph: "⌕", SelectionGlyph: "❯",
@@ -84,7 +84,7 @@ func GlyphsFor(mode GlyphMode) GlyphSet {
 	}
 	return GlyphSet{
 		WorkingGlyph: workingGlyph, StartingGlyph: startingGlyph, WaitingGlyph: waitingGlyph,
-		FinishedGlyph: finishedGlyph, CrossGlyph: "x", IdleGlyph: idleGlyph,
+		FinishedGlyph: finishedGlyph, DeadGlyph: "x", CrossGlyph: "x", IdleGlyph: idleGlyph,
 		ReorderGrip: reorderGrip, InboxGlyph: inboxGlyph, BranchGlyph: branchGlyph,
 		GroupOpenGlyph: groupOpenGlyph, GroupClosedGlyph: groupClosedGlyph,
 		PromptGlyph: ">", ReplyGlyph: "<", SearchGlyph: "/", SelectionGlyph: ">",
